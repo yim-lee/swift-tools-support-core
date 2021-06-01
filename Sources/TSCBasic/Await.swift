@@ -1,12 +1,14 @@
 /*
  This source file is part of the Swift.org open source project
 
- Copyright (c) 2014 - 2017 Apple Inc. and the Swift project authors
+ Copyright (c) 2014 - 2021 Apple Inc. and the Swift project authors
  Licensed under Apache License v2.0 with Runtime Library Exception
 
  See http://swift.org/LICENSE.txt for license information
  See http://swift.org/CONTRIBUTORS.txt for Swift project authors
 */
+
+import struct Foundation.Date
 
 /// Converts an asynchronous method having callback using Result enum to synchronous.
 ///
@@ -33,6 +35,33 @@ public func tsc_await<T>(_ body: (@escaping (T) -> Void) -> Void) -> T {
         }
     }
     return result!
+}
+
+public func tsc_await<T, ErrorType>(until limit: Date, _ body: (@escaping (Result<T, ErrorType>) -> Void) -> Void) throws -> T {
+    return try tsc_await(until: limit, body).get()
+}
+
+public func tsc_await<T>(until limit: Date, _ body: (@escaping (T) -> Void) -> Void) throws -> T {
+    let condition = Condition()
+    var result: T? = nil
+    body { theResult in
+        condition.whileLocked {
+            result = theResult
+            condition.signal()
+        }
+    }
+    try condition.whileLocked {
+        while result == nil {
+            guard condition.wait(until: limit) else {
+                throw TSCAwaitError.timedOut
+            }
+        }
+    }
+    return result!
+}
+
+public enum TSCAwaitError: Error, Equatable {
+    case timedOut
 }
 
 @available(*, deprecated, renamed: "tsc_await")
